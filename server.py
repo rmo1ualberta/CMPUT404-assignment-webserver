@@ -191,9 +191,8 @@ class MyWebServer(socketserver.BaseRequestHandler):
     def res_200(self):
         """Responds back to the user agent with a 200 OK response
         """
-        res_headers = []
+        
         res_body = ''
-
         # get response message body
         abs_path = self.get_abs_path()
         if abs_path[-1] == '/':
@@ -201,14 +200,15 @@ class MyWebServer(socketserver.BaseRequestHandler):
         with open(abs_path, "r") as file:
             res_body = file.read()
 
-        print (f"the path is {abs_path}")
-        # add in the necessary headers
-        res_headers.append(f'Date: {self.get_current_date_time()}')
-        res_headers.append(f'Content-Type: {self.get_content_type(abs_path)}')
-        res_headers.append(f'Content-Length: {self.utf8len(res_body)}')
+        res_headers = [
+            f'Date: {self.get_current_date_time()}',
+            f'Content-Type: {self.get_content_type(abs_path)}',
+            f'Content-Length: {self.utf8len(res_body)}',
+            f'Location: http://{self.headers_dic["Host"]}{self.request_dic["path"]}'
+        ]
+
         if "Connection" in self.headers_dic:
             res_headers.append(f'Connection: {self.headers_dic["Connection"]}')
-        res_headers.append(f'Location: http://{self.headers_dic["Host"]}{self.request_dic["path"]}')
 
         # get the full response message
         res_msg = self.http_res_msg(200, res_headers, res_body)
@@ -218,34 +218,32 @@ class MyWebServer(socketserver.BaseRequestHandler):
     def res_301(self):
         """Responds back to the user agent with a 301 Moved Permanently response
         """
-        res_headers = []
         res_body = ''
+        res_headers = [
+            f'Date: {self.get_current_date_time()}',
+            f'Content-Length: {self.utf8len(res_body)}',
+            f'Connection: close',
+            f'Location: http://{self.headers_dic["Host"]}{self.request_dic["path"]}'
+        ]
 
         # correct the path
         self.request_dic["path"] += '/'
 
-        # add in the necessary headers
-        res_headers.append(f'Date: {self.get_current_date_time()}')
-        res_headers.append(f'Content-Length: {self.utf8len(res_body)}')
-        res_headers.append(f'Connection: close')
-        res_headers.append(f'Location: http://{self.headers_dic["Host"]}{self.request_dic["path"]}')
-
         # get the full response message
-        res_msg = self.http_res_msg(301, res_headers, res_body)
+        res_msg = self.http_res_msg(301, res_headers)
         
         return res_msg
 
     def res_404(self):
         """Responds back to the user agent with a 404 Not Found response
         """
-        res_headers = []
         res_body = self.page_404()
-
-        res_headers.append(f'Date: {self.get_current_date_time()}')
-        res_headers.append(f"Content-Type: text/html")
-        res_headers.append(f'Content-Length: {self.utf8len(res_body)}')
-        if "Connection" in self.headers_dic:
-            res_headers.append(f'Connection: {self.headers_dic["Connection"]}')
+        res_headers = [
+            f'Date: {self.get_current_date_time()}',
+            f"Content-Type: text/html",
+            f'Content-Length: {self.utf8len(res_body)}',
+            f'Connection: close'
+        ]
 
         res_msg = self.http_res_msg(404, res_headers, res_body)
         return res_msg
