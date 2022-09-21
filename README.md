@@ -26,5 +26,6 @@ compatible) http://docs.python.org/2/library/socketserver.html
 
 Docs/References:
 https://stackoverflow.com/questions/18563664/socketserver-python
+https://stackoverflow.com/questions/30686701/python-get-size-of-string-in-bytes
 
 
