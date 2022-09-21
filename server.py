@@ -2,6 +2,7 @@
 import socketserver
 import os
 import datetime
+import mimetypes
 
 # Copyright 2022 Abram Hindle, Eddie Antonio Santos, Raymond Mo
 # 
@@ -56,7 +57,7 @@ class MyWebServer(socketserver.BaseRequestHandler):
     def parse_request(self, data):
         """ Parses the given request line by getting the method, path, and the HTTP version.
             Adds that parsed data into two dictionaries, one for the request, and one for
-            the headers.
+            the requested headers.
         Args:
             data (_type_): The request data received by our server
         """
@@ -68,34 +69,27 @@ class MyWebServer(socketserver.BaseRequestHandler):
         try:
             lines = lines[0:lines.index('')]        # formats lines to only include the request and its headers, ignores the body
         except ValueError as e:
-            lines                                   # there is no body, just the request and headers
+            pass                                   # there is no body, just the request and headers
         
         # get the headers and add it to a dictionary
         for line in lines[1:]:
             header, val = line.split(': ')
             self.headers_dic[header] = val
 
-    def get_content_type(self, path: str):
-        """ Given a path to a file, returns the file type.
+    def get_mime_type(self, path: str):
+        """ Given a path to a file, returns the content-type needed for the HTTP response.
 
         Args:
             path (str): The string path to the file we want to get the file extension from.
 
         Returns:
-            The file type, as a string.
+            The file type, as a string. HTML content type is returned if otherwise.
         """
-        # determine content type to respond back with
-        valid_content_types = {
-            "css": "text/css",
-            "html": "text/html"
-        }
-        
-        file_type = path.split('.')[-1]
-        if file_type in valid_content_types:
-            return valid_content_types[file_type]
-        return valid_content_types['html']
+        file = path.split('/')[-1]
+        mimetype = mimetypes.guess_type(file)
+        return mimetype[0]
 
-    def http_res_msg(self, status_code, headers, body=''):
+    def build_res_msg(self, status_code, headers, body=''):
         """Builds the HTTP response message to be send back to the user agent.
 
         Args:
@@ -109,7 +103,6 @@ class MyWebServer(socketserver.BaseRequestHandler):
         status_codes = {
             200: "OK",
             301: "Moved Permanently",
-            400: "Bad Request",
             404: "Not Found",
             405: "Method Not Allowed"
         }
@@ -123,39 +116,16 @@ class MyWebServer(socketserver.BaseRequestHandler):
 
         return '\r\n'.join(res_msg) + body
 
-    def get_abs_root(self):
-        """Gets the absolute root path to the folder www
-
-        Returns:
-            A string of the absolute root path to www
-        """
-        return os.path.join(os.path.abspath(os.path.dirname(__file__)), 'www')          # get the absolute root directory of our www folder
-
-    def get_abs_path(self):
-        """Gets the absolute path of the requested path
-
-        Returns:
-            A string of the absolute path of the requested path
-        """
-        abs_root = self.get_abs_root()
-        req_path = self.request_dic["path"]
-        return f"{abs_root}/{req_path[1:]}"
-
-    def get_abs_norm_path(self):
-        """Gets  the absolute normalized path of the requested path
-
-        Returns:
-            A string of the absolute normalized path of the requested path
-        """
-        return f'{self.get_abs_root()}/{os.path.normpath(self.request_dic["path"])}'
-
     def is_valid_path(self):
         """Checks if the given path is an existing directory in www
 
         Returns:
             True if path exists
         """
-        return os.path.isdir(self.get_abs_norm_path())
+        # normalize path to prevent attacks
+        
+        abs_norm_path = f'{os.path.abspath("www")}/{os.path.normpath(self.request_dic["path"])}'
+        return os.path.isdir(abs_norm_path)
     
     def is_valid_file(self):
         """Checks if the given path to a file is an existing file in www or its subdirectories
@@ -189,12 +159,12 @@ class MyWebServer(socketserver.BaseRequestHandler):
         return method in valid_methods
 
     def res_200(self):
-        """Responds back to the user agent with a 200 OK response
+        """ Builds a 200 OK response message
         """
         
         res_body = ''
         # get response message body
-        abs_path = self.get_abs_path()
+        abs_path = f"{os.path.abspath('www')}/{self.request_dic['path']}"
         if abs_path[-1] == '/':
             abs_path += 'index.html'
         with open(abs_path, "r") as file:
@@ -202,7 +172,7 @@ class MyWebServer(socketserver.BaseRequestHandler):
 
         res_headers = [
             f'Date: {self.get_current_date_time()}',
-            f'Content-Type: {self.get_content_type(abs_path)}',
+            f'Content-Type: {self.get_mime_type(abs_path)}',
             f'Content-Length: {self.utf8len(res_body)}',
             f'Location: http://{self.headers_dic["Host"]}{self.request_dic["path"]}'
         ]
@@ -211,12 +181,12 @@ class MyWebServer(socketserver.BaseRequestHandler):
             res_headers.append(f'Connection: {self.headers_dic["Connection"]}')
 
         # get the full response message
-        res_msg = self.http_res_msg(200, res_headers, res_body)
+        res_msg = self.build_res_msg(200, res_headers, res_body)
 
         return res_msg
 
     def res_301(self):
-        """Responds back to the user agent with a 301 Moved Permanently response
+        """ Builds a 301 Moved Permanently response message
         """
         res_body = ''
         res_headers = [
@@ -230,12 +200,12 @@ class MyWebServer(socketserver.BaseRequestHandler):
         self.request_dic["path"] += '/'
 
         # get the full response message
-        res_msg = self.http_res_msg(301, res_headers)
+        res_msg = self.build_res_msg(301, res_headers)
         
         return res_msg
 
     def res_404(self):
-        """Responds back to the user agent with a 404 Not Found response
+        """ Builds a 404 Not Found response message
         """
         res_body = self.page_404()
         res_headers = [
@@ -245,14 +215,14 @@ class MyWebServer(socketserver.BaseRequestHandler):
             f'Connection: close'
         ]
 
-        res_msg = self.http_res_msg(404, res_headers, res_body)
+        res_msg = self.build_res_msg(404, res_headers, res_body)
         return res_msg
 
     def res_405(self):
-        """Responds back to the user agent with a 405 Method Not Allowed response
+        """ Builds a 405 Method Not Allowed response message
         """
         res_headers = []
-        res_msg = self.http_res_msg(405, res_headers)
+        res_msg = self.build_res_msg(405, res_headers)
         return res_msg
 
     def get_current_date_time(self):
@@ -262,7 +232,6 @@ class MyWebServer(socketserver.BaseRequestHandler):
             A string formatted to the correct format in HTTP date
         """
         return datetime.datetime.now(datetime.timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %Z")
-
 
     def utf8len(self, s):
         """ Gets the length of a string in bytes.
@@ -277,6 +246,7 @@ class MyWebServer(socketserver.BaseRequestHandler):
         return len(s.encode('utf-8'))
 
     def page_404(self):
+        # fun :)
         return (r"""
         <html><head><style type=text/css>
         p {    color: red;    
@@ -291,10 +261,6 @@ class MyWebServer(socketserver.BaseRequestHandler):
         </body>
         </html>
         """)
-
-    
-
-
 
 if __name__ == "__main__":
     HOST, PORT = "localhost", 8080
