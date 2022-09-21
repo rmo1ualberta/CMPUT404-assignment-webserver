@@ -3,7 +3,7 @@ import socketserver
 import os
 import datetime
 
-# Copyright 2013 Abram Hindle, Eddie Antonio Santos
+# Copyright 2022 Abram Hindle, Eddie Antonio Santos, Raymond Mo
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ import datetime
 #
 #
 # Furthermore it is derived from the Python documentation examples thus
-# some of the code is Copyright © 2001-2013 Python Software
+# some of the code is Copyright © 2001-2022 Python Software
 # Foundation; All Rights Reserved
 #
 # http://docs.python.org/2/library/socketserver.html
