@@ -1,8 +1,8 @@
 #  coding: utf-8 
 import socketserver
 import os
-import datetime
 import mimetypes
+import datetime
 
 # Copyright 2022 Abram Hindle, Eddie Antonio Santos, Raymond Mo
 # 
@@ -32,198 +32,120 @@ import mimetypes
 
 class MyWebServer(socketserver.BaseRequestHandler):
 
-    HTTP_ver = "HTTP/1.1"
-    request_dic = {}
-    headers_dic = {}
-    
+    status_codes = {
+        200: "OK",
+        301: "Permanently Moved",
+        404: "Not Found",
+        405: "Method Not Allowed"
+    }
+    webFolder = './www'
+
     def handle(self):
         self.data = self.request.recv(1024).decode("utf-8").strip()
-        self.parse_request(self.data)
-        print ("\nGot a request of: %s\n" % self.data)
+        print ("Got a request of: %s\n" % self.data)
 
-        # check the request and response accordingly
-        res_msg = ''
-        if not self.is_valid_method(self.request_dic["method"]):
-            res_msg = self.res_405()
-        elif self.is_valid_path() and not self.is_valid_file() and not self.is_path_correct():
-            res_msg = self.res_301()
-        elif not (self.is_valid_path() or self.is_valid_file()):
-            res_msg = self.res_404()
+        lines = self.data.splitlines()
+        reqMethod, self.path, self.HTTP_ver = str(lines[0]).split(' ')
+        resMessage = ''
+        if not self.is_valid_method(reqMethod):
+            resMessage = self._405()
+        elif self.check_path():
+            resMessage = self._301()
+        elif not self.path_exists():
+            resMessage = self._404()
         else:
-            res_msg = self.res_200()
+            resMessage = self._200()
         
-        self.request.sendall(bytearray(res_msg,'utf-8'))
-
-    def parse_request(self, data):
-        """ Parses the given request line by getting the method, path, and the HTTP version.
-            Adds that parsed data into two dictionaries, one for the request, and one for
-            the requested headers.
-        Args:
-            data (_type_): The request data received by our server
-        """
-        lines = data.splitlines()
-        # get our request method, path, and HTTP version
-        self.request_dic["method"], self.request_dic["path"], self.HTTP_ver = str(lines[0]).split(' ')
-        self.request_dic['content_type'] = ''
-
-        try:
-            lines = lines[0:lines.index('')]        # formats lines to only include the request and its headers, ignores the body
-        except ValueError as e:
-            pass                                   # there is no body, just the request and headers
-        
-        # get the headers and add it to a dictionary
-        for line in lines[1:]:
-            header, val = line.split(': ')
-            self.headers_dic[header] = val
+        self.request.sendall(bytearray(resMessage,'utf-8'))
 
     def get_mime_type(self, path: str):
         """ Given a path to a file, returns the content-type needed for the HTTP response.
 
         Args:
-            path (str): The string path to the file we want to get the file extension from.
+            path (str): The string path to the file we want to get the mimetype from.
 
         Returns:
-            The file type, as a string. HTML content type is returned if otherwise.
+            The mime type, as a string.
         """
         file = path.split('/')[-1]
         mimetype = mimetypes.guess_type(file)
         return mimetype[0]
 
-    def build_res_msg(self, status_code, headers, body=''):
-        """Builds the HTTP response message to be send back to the user agent.
+    def _405(self):
+        resMessage = ''
+        status = f'{self.HTTP_ver} 405 {self.status_codes[405]}\r\n'
+        resMessage += status + '\r\n'
+        return resMessage
 
-        Args:
-            status_code (int): The status code
-            headers (list): A list containing the headers to be sent back
-            body (str, optional): String containing the entity body. Defaults to ''.
-
-        Returns:
-            A string of the fully built response message
-        """
-        status_codes = {
-            200: "OK",
-            301: "Moved Permanently",
-            404: "Not Found",
-            405: "Method Not Allowed"
-        }
-        res_msg = []    
-
-        # Status Code & Msg
-        status_msg = f"{self.HTTP_ver} {status_code} {status_codes[status_code]}"
-        res_msg.append(status_msg)
-        res_msg.extend(headers)
-        res_msg.append("\r\n")
-
-        return '\r\n'.join(res_msg) + body
-
-    def is_valid_path(self):
-        """Checks if the given path is an existing directory in www
-
-        Returns:
-            True if path exists
-        """
-        # normalize path to prevent attacks
+    def _404(self):
+        resMessage = ''
+        status = f'{self.HTTP_ver} 404 {self.status_codes[404]}\r\n'
         
-        abs_norm_path = f'{os.path.abspath("www")}/{os.path.normpath(self.request_dic["path"])}'
-        return os.path.isdir(abs_norm_path)
+        resBody = self.page_404()
+        resHeaders = [
+            f'Date: {self.get_current_date_time()}',
+            f'Content-Type: text/html',
+            f'Content-Length: {self.utf8len(resBody)}',
+            f'Connection: close',
+            f'Location: http://{self.server.server_address[0]}:{self.server.server_address[1]}{self.path}'
+        ]
+        resMessage += status + '\r\n'.join(resHeaders) + '\r\n\r\n' + resBody
+
+        return resMessage
+
+    def _301(self):
+        resMessage = ''
+        status = f'{self.HTTP_ver} 301 {self.status_codes[301]}\r\n'
+        resBody = ''
+        print("the correct path is " + f'Location: http://{self.server.server_address[0]}:{self.server.server_address[1]}{self.path}/')
+        resHeaders = [
+            f'Date: {self.get_current_date_time()}',
+            f'Content-Type: {self.get_mime_type(self.path)}',
+            f'Content-Length: {self.utf8len(resBody)}',
+            f'Connection: close',
+            f'Location: http://{self.server.server_address[0]}:{self.server.server_address[1]}{self.path}/'
+        ]
+        resMessage += status + '\r\n'.join(resHeaders) + '\r\n\r\n'
+
+
+        return resMessage
+
+    def _200(self):
+        resMessage = ''
+        status = f'{self.HTTP_ver} 200 {self.status_codes[200]}\r\n'
+        resBody = ''
+        absPath = f"{self.webFolder}{self.path}"
+        if absPath[-1] == '/':
+            absPath += 'index.html'
+        with open(absPath, "r") as file:
+            resBody = file.read()
+        resHeaders = [
+            f'Date: {self.get_current_date_time()}',
+            f'Content-Type: {self.get_mime_type(absPath)}',
+            f'Content-Length: {self.utf8len(resBody)}',
+            f'Connection: close',
+            f'Location: http://{self.server.server_address[0]}:{self.server.server_address[1]}{self.path}'
+        ]
+        resMessage += status + '\r\n'.join(resHeaders) + '\r\n\r\n' + resBody
+        
+
+        return resMessage
+
+    def check_path(self):
+        pathToCheck = f"{self.webFolder}{self.path}"
+        # check that the path is not a file, and that if its missing a slash at the end, if its an existing directory
+        return pathToCheck[-1] != '/' and not os.path.isfile(pathToCheck.split('/')[-1]) and os.path.exists(pathToCheck+'/')
+
+    def path_exists(self):
+        # normalize path to prevent directory attacks
+        pathToCheck = f"{self.webFolder}{os.path.normpath(self.path)}"
+        return os.path.exists(pathToCheck)
     
-    def is_valid_file(self):
-        """Checks if the given path to a file is an existing file in www or its subdirectories
-
-        Returns:
-            True if file exists
-        """
-        return os.path.isfile(self.get_abs_norm_path())
-
-    def is_path_correct(self):
-        """Checks if the path is correct; in that it has an ending slash
-
-        Returns:
-            True if correct
-        """
-        return self.request_dic["path"][-1] == '/'         
-        
-    def is_valid_method(self, method: str):
-        """Checks if the given method is valid
-
-        Args:
-            method (str): The method given in the request
-
-        Returns:
-            True if the method given is correct
-        """
-        valid_methods = [
+    def is_valid_method(self, reqMethod: str):
+        validMethods = [
             'GET'
         ]
-        # print(f"The method is {method} and valid = {method in valid_methods}")
-        return method in valid_methods
-
-    def res_200(self):
-        """ Builds a 200 OK response message
-        """
-        
-        res_body = ''
-        # get response message body
-        abs_path = f"{os.path.abspath('www')}/{self.request_dic['path']}"
-        if abs_path[-1] == '/':
-            abs_path += 'index.html'
-        with open(abs_path, "r") as file:
-            res_body = file.read()
-
-        res_headers = [
-            f'Date: {self.get_current_date_time()}',
-            f'Content-Type: {self.get_mime_type(abs_path)}',
-            f'Content-Length: {self.utf8len(res_body)}',
-            f'Location: http://{self.headers_dic["Host"]}{self.request_dic["path"]}'
-        ]
-
-        if "Connection" in self.headers_dic:
-            res_headers.append(f'Connection: {self.headers_dic["Connection"]}')
-
-        # get the full response message
-        res_msg = self.build_res_msg(200, res_headers, res_body)
-
-        return res_msg
-
-    def res_301(self):
-        """ Builds a 301 Moved Permanently response message
-        """
-        res_body = ''
-        res_headers = [
-            f'Date: {self.get_current_date_time()}',
-            f'Content-Length: {self.utf8len(res_body)}',
-            f'Connection: close',
-            f'Location: http://{self.headers_dic["Host"]}{self.request_dic["path"]}'
-        ]
-
-        # correct the path
-        self.request_dic["path"] += '/'
-
-        # get the full response message
-        res_msg = self.build_res_msg(301, res_headers)
-        
-        return res_msg
-
-    def res_404(self):
-        """ Builds a 404 Not Found response message
-        """
-        res_body = self.page_404()
-        res_headers = [
-            f'Date: {self.get_current_date_time()}',
-            f"Content-Type: text/html",
-            f'Content-Length: {self.utf8len(res_body)}',
-            f'Connection: close'
-        ]
-
-        res_msg = self.build_res_msg(404, res_headers, res_body)
-        return res_msg
-
-    def res_405(self):
-        """ Builds a 405 Method Not Allowed response message
-        """
-        res_headers = []
-        res_msg = self.build_res_msg(405, res_headers)
-        return res_msg
+        return reqMethod in validMethods
 
     def get_current_date_time(self):
         """Gets the current time 
@@ -244,7 +166,7 @@ class MyWebServer(socketserver.BaseRequestHandler):
             The length of the given string in bytes
         """
         return len(s.encode('utf-8'))
-
+    
     def page_404(self):
         # fun :)
         return (r"""
