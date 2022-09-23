@@ -72,12 +72,22 @@ class MyWebServer(socketserver.BaseRequestHandler):
         return mimetype[0]
 
     def _405(self):
+        """Builds a 405 Method Not Allowed response message
+
+        Returns:
+            The 405 response message
+        """
         resMessage = ''
         status = f'{self.HTTP_ver} 405 {self.status_codes[405]}\r\n'
         resMessage += status + '\r\n'
         return resMessage
 
     def _404(self):
+        """Builds a 404 Not Found response message
+
+        Returns:
+            The 404 response message
+        """
         resMessage = ''
         status = f'{self.HTTP_ver} 404 {self.status_codes[404]}\r\n'
         
@@ -94,10 +104,14 @@ class MyWebServer(socketserver.BaseRequestHandler):
         return resMessage
 
     def _301(self):
+        """Builds a 301 Moved Permanently response message
+
+        Returns:
+            The 301 response message
+        """
         resMessage = ''
         status = f'{self.HTTP_ver} 301 {self.status_codes[301]}\r\n'
         resBody = ''
-        print("the correct path is " + f'Location: http://{self.server.server_address[0]}:{self.server.server_address[1]}{self.path}/')
         resHeaders = [
             f'Date: {self.get_current_date_time()}',
             f'Content-Type: {self.get_mime_type(self.path)}',
@@ -107,10 +121,14 @@ class MyWebServer(socketserver.BaseRequestHandler):
         ]
         resMessage += status + '\r\n'.join(resHeaders) + '\r\n\r\n'
 
-
         return resMessage
 
     def _200(self):
+        """Builds a 200 OK response message
+
+        Returns:
+            The 200 response message
+        """
         resMessage = ''
         status = f'{self.HTTP_ver} 200 {self.status_codes[200]}\r\n'
         resBody = ''
@@ -132,16 +150,35 @@ class MyWebServer(socketserver.BaseRequestHandler):
         return resMessage
 
     def check_path(self):
+        """Checks the requested path as to whether or not it has an ending slash,
+        and whether it exists or not.
+
+        Returns:
+            True if it passes the check
+        """
         pathToCheck = f"{self.webFolder}{self.path}"
         # check that the path is not a file, and that if its missing a slash at the end, if its an existing directory
         return pathToCheck[-1] != '/' and not os.path.isfile(pathToCheck.split('/')[-1]) and os.path.exists(pathToCheck+'/')
 
     def path_exists(self):
+        """Checks if the requested path exists
+
+        Returns:
+            True if it exists
+        """
         # normalize path to prevent directory attacks
         pathToCheck = f"{self.webFolder}{os.path.normpath(self.path)}"
         return os.path.exists(pathToCheck)
     
     def is_valid_method(self, reqMethod: str):
+        """Checks if the requested method is valid
+
+        Args:
+            reqMethod (str): The requested method
+
+        Returns:
+            True if the method is valid
+        """
         validMethods = [
             'GET'
         ]
