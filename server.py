@@ -1,7 +1,6 @@
 #  coding: utf-8 
 import socketserver
 import os
-import mimetypes
 import datetime
 
 # Copyright 2022 Abram Hindle, Eddie Antonio Santos, Raymond Mo
@@ -39,13 +38,29 @@ class MyWebServer(socketserver.BaseRequestHandler):
         405: "Method Not Allowed"
     }
     webFolder = './www'
+    serverName = 'Python'
 
     def handle(self):
         self.data = self.request.recv(1024).decode("utf-8").strip()
         print ("Got a request of: %s\n" % self.data)
 
         lines = self.data.splitlines()
+        # get the request line (e.g. GET / HTTP/1.1)
         reqMethod, self.path, self.HTTP_ver = str(lines[0]).split(' ')
+
+        self.reqHeadersDic = {}
+        # get the request headers
+        try:
+            lines = lines[0:lines.index('')]        # formats lines to only include the request and its headers, ignores the body
+        except ValueError as e:
+            lines                                   # there is no body, just the request and headers
+        # get the headers and add it to a dictionary
+        for line in lines[1:]:
+            header, val = line.split(': ')
+            self.reqHeadersDic[header] = val
+
+
+        # get our response message, according to the conditions
         resMessage = ''
         if not self.is_valid_method(reqMethod):
             resMessage = self._405()
@@ -67,9 +82,49 @@ class MyWebServer(socketserver.BaseRequestHandler):
         Returns:
             The mime type, as a string.
         """
+        valid_mime_types = {
+            "css": "text/css",
+            "html": "text/html",
+        }
         file = path.split('/')[-1]
-        mimetype = mimetypes.guess_type(file)
-        return mimetype[0]
+        fileType = file.split('.')[-1]
+        try:
+            mimetype = valid_mime_types[fileType]
+        except:
+            # default to plain text if file type not found in valid mimetypes
+            mimetype = "text/plain"
+        return mimetype
+
+    def res_message_builder(self, statusCode, resBody, mimeType, addResHeaders=[]):
+        """ Builds a HTTP response message accordingly
+
+        Args:
+            statusCode (int): An integer of the status code to be responded back with 
+            resBody (str): The response entity body to be responded back with 
+            mimeType(str): The mimetype to be used in the Content-Type response header
+            addResHeaders(list): Any additional response headers that should be responded back with
+
+        Returns:
+            resMessage(str): The HTTP response message
+        """
+        status = f'{self.HTTP_ver} {statusCode} {self.status_codes[statusCode]}\r\n'
+
+        # create general headers and response headers
+        connVal = 'close'
+        if 'Connection' in self.reqHeadersDic:
+            connVal = self.reqHeadersDic["Connection"]
+        resHeaders = [
+            f'Date: {self.get_current_date_time()}',
+            f'Server: {self.serverName}',
+            f'Content-Type: {mimeType}',
+            f'Content-Length: {self.utf8len(resBody)}',
+            f'Connection: {connVal}'
+        ]
+        resHeaders.extend(addResHeaders)            # add any addition response headers; changes according to the type of response
+
+        resMessage = status + '\r\n'.join(resHeaders) + '\r\n\r\n' + resBody
+
+        return resMessage
 
     def _405(self):
         """Builds a 405 Method Not Allowed response message
@@ -77,9 +132,9 @@ class MyWebServer(socketserver.BaseRequestHandler):
         Returns:
             The 405 response message
         """
-        resMessage = ''
-        status = f'{self.HTTP_ver} 405 {self.status_codes[405]}\r\n'
-        resMessage += status + '\r\n'
+        resBody = ''
+        resMessage = self.res_message_builder(405, resBody, self.get_mime_type(self.path))
+
         return resMessage
 
     def _404(self):
@@ -88,18 +143,8 @@ class MyWebServer(socketserver.BaseRequestHandler):
         Returns:
             The 404 response message
         """
-        resMessage = ''
-        status = f'{self.HTTP_ver} 404 {self.status_codes[404]}\r\n'
-        
         resBody = self.page_404()
-        resHeaders = [
-            f'Date: {self.get_current_date_time()}',
-            f'Content-Type: text/html',
-            f'Content-Length: {self.utf8len(resBody)}',
-            f'Connection: close',
-            f'Location: http://{self.server.server_address[0]}:{self.server.server_address[1]}{self.path}'
-        ]
-        resMessage += status + '\r\n'.join(resHeaders) + '\r\n\r\n' + resBody
+        resMessage = self.res_message_builder(404, resBody, "text/html")
 
         return resMessage
 
@@ -109,17 +154,11 @@ class MyWebServer(socketserver.BaseRequestHandler):
         Returns:
             The 301 response message
         """
-        resMessage = ''
-        status = f'{self.HTTP_ver} 301 {self.status_codes[301]}\r\n'
-        resBody = ''
         resHeaders = [
-            f'Date: {self.get_current_date_time()}',
-            f'Content-Type: {self.get_mime_type(self.path)}',
-            f'Content-Length: {self.utf8len(resBody)}',
-            f'Connection: close',
             f'Location: http://{self.server.server_address[0]}:{self.server.server_address[1]}{self.path}/'
         ]
-        resMessage += status + '\r\n'.join(resHeaders) + '\r\n\r\n'
+        resBody = ''
+        resMessage = self.res_message_builder(301, resBody, self.get_mime_type(self.path), resHeaders)
 
         return resMessage
 
@@ -129,23 +168,16 @@ class MyWebServer(socketserver.BaseRequestHandler):
         Returns:
             The 200 response message
         """
-        resMessage = ''
-        status = f'{self.HTTP_ver} 200 {self.status_codes[200]}\r\n'
+
+        # get the body to be responded back with (in this case html or css)
         resBody = ''
         absPath = f"{self.webFolder}{self.path}"
         if absPath[-1] == '/':
             absPath += 'index.html'
         with open(absPath, "r") as file:
             resBody = file.read()
-        resHeaders = [
-            f'Date: {self.get_current_date_time()}',
-            f'Content-Type: {self.get_mime_type(absPath)}',
-            f'Content-Length: {self.utf8len(resBody)}',
-            f'Connection: close',
-            f'Location: http://{self.server.server_address[0]}:{self.server.server_address[1]}{self.path}'
-        ]
-        resMessage += status + '\r\n'.join(resHeaders) + '\r\n\r\n' + resBody
-        
+
+        resMessage = self.res_message_builder(200, resBody, self.get_mime_type(absPath))
 
         return resMessage
 
