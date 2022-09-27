@@ -200,6 +200,11 @@ class MyWebServer(socketserver.BaseRequestHandler):
         """
         # normalize path to prevent directory attacks
         pathToCheck = f"{self.webFolder}{os.path.normpath(self.path)}"
+        pathToCheck2 = f"{self.webFolder}{self.path}"
+        # check if given path without slash at end is a file, if so, send False (ideally we send a 400 Bad Request)
+        if pathToCheck2[-1] == '/' and os.path.isfile(pathToCheck2[0:-1]):
+            return False
+
         return os.path.exists(pathToCheck)
     
     def is_valid_method(self, reqMethod: str):
