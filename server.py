@@ -48,18 +48,6 @@ class MyWebServer(socketserver.BaseRequestHandler):
         # get the request line (e.g. GET / HTTP/1.1)
         reqMethod, self.path, self.HTTP_ver = str(lines[0]).split(' ')
 
-        self.reqHeadersDic = {}
-        # get the request headers
-        try:
-            lines = lines[0:lines.index('')]        # formats lines to only include the request and its headers, ignores the body
-        except ValueError as e:
-            lines                                   # there is no body, just the request and headers
-        # get the headers and add it to a dictionary
-        for line in lines[1:]:
-            header, val = line.split(': ')
-            self.reqHeadersDic[header] = val
-
-
         # get our response message, according to the conditions
         resMessage = ''
         if not self.is_valid_method(reqMethod):
@@ -110,15 +98,12 @@ class MyWebServer(socketserver.BaseRequestHandler):
         status = f'{self.HTTP_ver} {statusCode} {self.status_codes[statusCode]}\r\n'
 
         # create general headers and response headers
-        connVal = 'close'
-        if 'Connection' in self.reqHeadersDic:
-            connVal = self.reqHeadersDic["Connection"]
         resHeaders = [
             f'Date: {self.get_current_date_time()}',
             f'Server: {self.serverName}',
             f'Content-Type: {mimeType}',
             f'Content-Length: {self.utf8len(resBody)}',
-            f'Connection: {connVal}'
+            f'Connection: close'
         ]
         resHeaders.extend(addResHeaders)            # add any addition response headers; changes according to the type of response
 
